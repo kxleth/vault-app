@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VaultApp // Gestor Cifrado AES</title>
+    <!-- Librería CryptoJS para cifrado en el navegador -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #020617;
+            color: #f8fafc;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 650px;
+            margin: 0 auto;
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        h1 { font-family: 'Share Tech Mono', monospace; color: #06b6d4; text-align: center; }
+        label { display: block; margin-top: 15px; font-size: 0.9rem; color: #94a3b8; font-family: 'Share Tech Mono', monospace; }
+        input, button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 5px;
+            background: #020617;
+            border: 1px solid #1e293b;
+            color: #fff;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-family: 'Share Tech Mono', monospace;
+        }
+        button { background: #06b6d4; color: #020617; font-weight: bold; cursor: pointer; margin-top: 15px; }
+        button:hover { background: #22d3ee; }
+        .vault-card {
+            background: #020617;
+            border: 1px solid #1e293b;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .ciphertext-box {
+            font-size: 0.75rem;
+            color: #64748b;
+            word-break: break-all;
+            background: #090d16;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 5px;
+        }
+        .decrypted-text {
+            color: #10b981;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🔐 VaultApp // Zero-Knowledge Vault</h1>
+        <p style="text-align: center; color: #94a3b8; font-size: 0.9rem;">Cifrado AES local en cliente • Almacenamiento ciego en servidor</p>
+        
+        <label>Título del Secreto / Credencial:</label>
+        <input type="text" id="titulo" placeholder="Ej: Correo personal o Router WiFi">
+
+        <label>Secreto a cifrar (Contraseña, Nota, etc.):</label>
+        <input type="text" id="secreto" placeholder="Ej: MiClaveSecreta123">
+
+        <label>Contraseña Maestra (Llave de Cifrado):</label>
+        <input type="password" id="masterKey" placeholder="Tu clave maestra secreta...">
+
+        <button onclick="cifrarYGuardar()">Cifrar y Guardar en Servidor</button>
+
+        <hr style="border: 0; border-top: 1px solid #1e293b; margin: 30px 0;">
+
+        <h2>📂 Bóveda en la Nube (Cifrada)</h2>
+        <button onclick="cargarVaults()" style="background: #3b82f6; color: white;">Actualizar Bóveda</button>
+        
+        <div id="listaVaults" style="margin-top: 15px;"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5003/api';
+
+        function cifrarYGuardar() {
+            const titulo = document.getElementById('titulo').value;
+            const texto = document.getElementById('secreto').value;
+            const key = document.getElementById('masterKey').value;
+
+            if(!titulo || !texto || !key) {
+                alert("Por favor completa todos los campos.");
+                return;
+            }
+
+            // 1. Cifrar del lado del cliente usando CryptoJS (AES)
+            const ciphertext = CryptoJS.AES.encrypt(texto, key).toString();
+
+            // 2. Enviar el texto cifrado al servidor Flask
+            fetch(`${API_URL}/guardar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ titulo: titulo, ciphertext: ciphertext })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.mensaje);
+                document.getElementById('titulo').value = '';
+                document.getElementById('secreto').value = '';
+                cargarVaults();
+            })
+            .catch(err => console.error("Error al guardar:", err));
+        }
+
+        function cargarVaults() {
+            fetch(`${API_URL}/obtener`)
+            .then(res => res.json())
+            .then(data => {
+                const contenedor = document.getElementById('listaVaults');
+                contenedor.innerHTML = '';
+
+                if(data.length === 0) {
+                    contenedor.innerHTML = '<p style="color: #64748b; text-align: center;">No hay registros en la bóveda.</p>';
+                    return;
+                }
+
+                data.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'vault-card';
+                    div.innerHTML = `
+                        <strong>📌 ${item.titulo}</strong>
+                        <div class="ciphertext-box">Cifrado: ${item.ciphertext}</div>
+                        <div style="margin-top: 10px; display: flex; gap: 10px;">
+                            <input type="password" id="key-${item.id}" placeholder="Contraseña maestra..." style="margin:0; padding:8px;">
+                            <button onclick="descifrarItem(${item.id}, '${item.ciphertext}')" style="margin:0; padding:8px 15px; width: auto;">Descifrar</button>
+                        </div>
+                        <div id="result-${item.id}" class="decrypted-text"></div>
+                    `;
+                    contenedor.appendChild(div);
+                });
+            })
+            .catch(err => console.error("Error al cargar bóveda:", err));
+        }
+
+        // Cargar al abrir la página
+        window.onload = cargarVaults;
+
+        function descifrarItem(id, ciphertext) {
+            const key = document.getElementById(`key-${id}`).value;
+            const resultBox = document.getElementById(`result-${id}`);
+
+            if(!key) {
+                alert("Introduce la contraseña maestra para descifrar.");
+                return;
+            }
+
+            try {
+                // Intentar descifrar con CryptoJS usando la llave introducida
+                const bytes = CryptoJS.AES.decrypt(ciphertext, key);
+                const originalText = bytes.toString(CryptoJS.enc.Utf8);
+
+                if(originalText) {
+                    resultBox.innerHTML = `🔓 Secreto: ${originalText}`;
+                } else {
+                    resultBox.innerHTML = `❌ Contraseña maestra incorrecta.`;
+                }
+            } catch (e) {
+                resultBox.innerHTML = `❌ Error al descifrar.`;
+            }
+        }
+    </script>
+</body>
+</html>
